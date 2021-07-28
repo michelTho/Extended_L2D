@@ -2,6 +2,7 @@ from copy import deepcopy
 
 import torch
 import torch.nn as nn
+from torch_geometric.data import Data, DataLoader
 
 from actor_critic import ActorCritic
 
@@ -14,6 +15,7 @@ class PPO:
         eps_clip,
         gamma,
         k_epochs,
+        batch_size,
         lr,
         decay_step_size,
         decay_ratio,
@@ -54,6 +56,7 @@ class PPO:
         self.gamma = gamma
         self.eps_clip = eps_clip
         self.k_epochs = k_epochs
+        self.batch_size = batch_size
 
         # The value part of the Loss is a classic MSE Loss
         self.value_loss_function = nn.MSELoss()
@@ -75,11 +78,19 @@ class PPO:
             value_loss = 0
             entropy_loss = 0
             for i in range(len(memories)):
-                current_pi, current_values = self.policy(
-                    # We use a torch.cat to convert list of tensor to batch tensor
-                    features=torch.stack(memories[i].features),
-                    adjacency_matrix=torch.stack(memories[i].adjacency_matrix),
-                )
+                # We use a dataloader structure to compute the pi and values of the
+                # actor_critic agent, to be able to use batches to speed up computation
+                dataloader = DataLoader(memories[i].graphs, batch_size=self.batch_size)
+                current_pi = []
+                current_values = []
+                for batch in dataloader:
+                    batch_pi, batch_values = self.policy(batch=batch)
+                    current_pi.append(batch_pi)
+                    current_values.append(batch_values)
+
+                current_pi = torch.cat(current_pi)
+                current_values = torch.cat(current_values)
+
                 current_log_probabilities, entropy = self.eval_action(
                     current_pi, memories[i].action
                 )
@@ -137,9 +148,14 @@ if __name__ == "__main__":
 
     memory = Memory()
     for i in range(10):
-        memory.features.append(torch.rand(4, 2))
-        memory.adjacency_matrix.append(
-            torch.tensor([[1, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [0, 0, 0, 1]])
+        memory.graphs.append(
+            Data(
+                x=torch.rand(4, 2),
+                edge_index=torch.tensor(
+                    [[0, 0, 1, 1, 1, 1, 2, 2, 2, 3], [0, 3, 0, 1, 2, 3, 0, 2, 3, 3]],
+                    dtype=torch.long,
+                ),
+            )
         )
         memory.action.append((0, 1))
         memory.reward.append(-1)
@@ -152,19 +168,20 @@ if __name__ == "__main__":
         eps_clip=0.2,
         gamma=1,
         k_epochs=3,
+        batch_size=2,
         lr=2e-5,
         decay_step_size=2000,
         decay_ratio=0.9,
         policy_loss_coeff=2,
         value_loss_coeff=1,
         entropy_loss_coeff=0.01,
-        n_mlp_layers_feature_extractor=2,
+        n_mlp_layers_feature_extractor=3,
         n_layers_feature_extractor=3,
         input_dim_feature_extractor=2,
-        hidden_dim_feature_extractor=64,
-        n_mlp_layers_actor=2,
+        hidden_dim_feature_extractor=8,
+        n_mlp_layers_actor=3,
         hidden_dim_actor=32,
-        n_mlp_layers_critic=2,
+        n_mlp_layers_critic=3,
         hidden_dim_critic=32,
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     )

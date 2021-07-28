@@ -1,11 +1,8 @@
 class Memory:
     def __init__(self):
-        # Initial features of the nodes of the graph.
-        # Should be of size (n_nodes, input_dim_feature_extractor)
-        self.features = []
-        # The current adjacency_matrix of the nodes of the graph
-        # Should be of size (n_nodes, n_nodes)
-        self.adjacency_matrix = []
+        # The state graphs are stored as torch_geometric.data.Data objects.
+        # These objects can be built from a list of node features, and a list of edges
+        self.graphs = []
         # The action that was taken. Is of the form (a, b) where a and b are the
         # indices of the nodes we want to connect
         self.action = []
@@ -37,8 +34,11 @@ if __name__ == "__main__":
     memory = Memory()
     for i in range(10):
         memory.features.append(torch.rand(2, 4))
-        memory.adjacency_matrix.append(
-            torch.tensor([[1, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [0, 0, 0, 1]])
+        memory.edge_index.append(
+            torch.tensor(
+                [[0, 0, 1, 1, 1, 1, 2, 2, 2, 3], [0, 3, 0, 1, 2, 3, 0, 2, 3, 3]],
+                dtype=torch.long,
+            )
         )
         memory.action.append((0, 1))
         memory.reward.append(-1)

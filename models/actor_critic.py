@@ -63,35 +63,64 @@ class ActorCritic(nn.Module):
             device=device,
         )
 
-    def forward(self, features, edge_index):
-        for layer in range(self.n_layers_feature_extractor - 1):
-            features = self.feature_extractors[layer](features, edge_index)
+    def forward(self, batch):
+        """
+        The batch input is an object of type torch_geometric.data.batch.Batch
+        It represents a batch of graphs as a giant graph, to speed up computation
+        (see https://pytorch-geometric.readthedocs.io/en/latest/notes/batching.html
+        for details)
+        It has at least 3 attributes :
+        - x : the feature tensor (n_nodes*batch_size,input_dim_feature_extractor) shaped
+        - edge_index : the edge tensor (2, n_edges_giant_graph) shaped
+        - batch : the id of the node in the batch (n_nodes*batch_size,) shaped
+        """
 
-        graph_pooling = torch.ones((1, self.n_nodes)) / self.n_nodes
-        graph_embedding = torch.sparse.mm(graph_pooling, features)
+        # Feature extraction
+        features = batch.x
+        for layer in range(self.n_layers_feature_extractor - 1):
+            features = self.feature_extractors[layer](features, batch.edge_index)
+
+        # Then we need to reshape vectors to a
+        # (batch_size, n_nodes, hidden_dim_feature_extractor) shape for the rest of the
+        # forward pass
+        batch_size = batch.batch[-1].item() + 1  # Id + 1 of the last node = batch size
+        features = features.reshape(batch_size, self.n_nodes, -1)
+
+        graph_pooling = torch.ones(self.n_nodes) / self.n_nodes
+        graph_embedding = torch.matmul(features.permute(0, 2, 1), graph_pooling)
+
         value = self.critic(graph_embedding)
 
-        possible_s_a_pairs = self.compute_possible_s_a_pairs(graph_embedding, features)
-        pi = F.softmax(self.actor(possible_s_a_pairs), dim=0)
-
+        possible_s_a_pairs = self.compute_possible_s_a_pairs(
+            graph_embedding.view(batch_size, 1, -1), features
+        )
+        probabilities = self.actor(possible_s_a_pairs)
+        probabilities = probabilities.view(batch_size, -1)
+        pi = F.softmax(probabilities, dim=1)
         return pi, value
 
-    def compute_possible_s_a_pairs(self, graph_embedding, nodes_embedding):
+    def compute_possible_s_a_pairs(self, graph_embedding, features):
         """
         Compute all possible actions for the state s. Since an action is equivalent to
         bouding 2 nodes, there are n_nodes^2 actions, i.e. (n_jobs * n_machines)^2
         actions.
-        The graph_embedding should be (1, hidden_dim_feature_extractor) shaped
-        The nodes_embedding should be (n_nodes, hidden_dim_feature_extractor) shaped
+        The graph_embedding should be (batch_size, 1, hidden_dim_feature_extractor)
+        shaped
+        The features should be (batch_size, n_nodes, hidden_dim_feature_extractor)
+        shaped
         One s_a_pair should be (1, 3 * hidden_dim_feature_extractor) shaped
-        The final s_a_pairs sould be (n_nodes^2, 3*hidden_dim_feature_extractor) shaped
+        The final s_a_pairs sould be
+        (batch_size * n_nodes^2, 3*hidden_dim_feature_extractor) shaped (we stack up the
+        different batches to feed them to the neural network)
         """
         # We create 3 tensors representing state, node 1 and node 2
         # and then stack them together to get all state action pairs
-        states = graph_embedding.repeat(self.n_nodes * self.n_nodes, 1)
-        nodes1 = nodes_embedding.repeat(self.n_nodes, 1)
-        nodes2 = nodes_embedding.repeat_interleave(self.n_nodes, dim=0)
-        s_a_pairs = torch.hstack([states, nodes1, nodes2])
+        states = graph_embedding.repeat(1, self.n_nodes * self.n_nodes, 1)
+        nodes1 = features.repeat(1, self.n_nodes, 1)
+        nodes2 = features.repeat_interleave(self.n_nodes, dim=1)
+        s_a_pairs = torch.cat([states, nodes1, nodes2], dim=2)
+        # Then stack all batches together
+        s_a_pairs = s_a_pairs.view(-1, 3 * self.hidden_dim_feature_extractor)
         return s_a_pairs
 
 

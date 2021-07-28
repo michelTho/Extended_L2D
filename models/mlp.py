@@ -4,12 +4,13 @@ import torch.nn.functional as F
 
 
 class MLP(nn.Module):
-    def __init__(self, n_layers, input_dim, hidden_dim, output_dim, batch_norm):
+    def __init__(self, n_layers, input_dim, hidden_dim, output_dim, batch_norm, device):
         super(MLP, self).__init__()
         self.n_layers = n_layers
         self.layers = torch.nn.ModuleList()
-
+        self.device = device
         self.batch_norm = batch_norm
+
         if self.batch_norm:
             self.batch_norms = torch.nn.ModuleList()
 
@@ -25,6 +26,7 @@ class MLP(nn.Module):
                     self.batch_norms.append(nn.BatchNorm1d(hidden_dim))
                 else:
                     self.batch_norms.append(nn.BatchNorm1d(output_dim))
+        self.to(self.device)
 
     def forward(self, x):
         for layer in range(self.n_layers - 1):
@@ -37,9 +39,10 @@ class MLP(nn.Module):
 
 # This is used for unit testing
 if __name__ == "__main__":
-    mlp = MLP(3, 8, 16, 2, False)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    mlp = MLP(3, 8, 16, 2, False, device)
     tensor = torch.Tensor(4, 8)
     print(tensor)
     print(mlp(tensor))
-    mlp = MLP(3, 8, 16, 2, True)
+    mlp = MLP(3, 8, 16, 2, True, device)
     print(mlp(tensor))

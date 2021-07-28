@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch_geometric.nn.conv import GINConv
 
-from gnn import GNN
 from mlp import MLP
 
 
@@ -27,13 +27,24 @@ class ActorCritic(nn.Module):
         self.n_nodes = n_jobs * n_machines
         self.hidden_dim_feature_extractor = hidden_dim_feature_extractor
 
-        self.feature_extractor = GNN(
-            n_mlp_layers_feature_extractor,
-            n_layers_feature_extractor,
-            input_dim_feature_extractor,
-            hidden_dim_feature_extractor,
-            device,
-        )
+        self.n_layers_feature_extractor = n_layers_feature_extractor
+        self.feature_extractors = torch.nn.ModuleList()
+
+        for layer in range(self.n_layers_feature_extractor - 1):
+            self.feature_extractors.append(
+                GINConv(
+                    MLP(
+                        n_layers=n_mlp_layers_feature_extractor,
+                        input_dim=input_dim_feature_extractor
+                        if layer == 0
+                        else hidden_dim_feature_extractor,
+                        hidden_dim=hidden_dim_feature_extractor,
+                        output_dim=hidden_dim_feature_extractor,
+                        batch_norm=True,
+                        device=device,
+                    )
+                )
+            )
 
         self.actor = MLP(
             n_layers=n_mlp_layers_actor,
@@ -41,6 +52,7 @@ class ActorCritic(nn.Module):
             hidden_dim=hidden_dim_actor,
             output_dim=1,
             batch_norm=False,
+            device=device,
         )
         self.critic = MLP(
             n_layers=n_mlp_layers_critic,
@@ -48,14 +60,18 @@ class ActorCritic(nn.Module):
             hidden_dim=hidden_dim_critic,
             output_dim=1,
             batch_norm=False,
+            device=device,
         )
 
-    def forward(self, features, adjacency_matrix):
-        graph_embed, nodes_embed = self.feature_extractor(features, adjacency_matrix)
+    def forward(self, features, edge_index):
+        for layer in range(self.n_layers_feature_extractor - 1):
+            features = self.feature_extractors[layer](features, edge_index)
 
-        value = self.critic(graph_embed)
+        graph_pooling = torch.ones((1, self.n_nodes)) / self.n_nodes
+        graph_embedding = torch.sparse.mm(graph_pooling, features)
+        value = self.critic(graph_embedding)
 
-        possible_s_a_pairs = self.compute_possible_s_a_pairs(graph_embed, nodes_embed)
+        possible_s_a_pairs = self.compute_possible_s_a_pairs(graph_embedding, features)
         pi = F.softmax(self.actor(possible_s_a_pairs), dim=0)
 
         return pi, value
@@ -95,8 +111,9 @@ if __name__ == "__main__":
         hidden_dim_critic=64,
         device=device,
     )
-    adjacency_matrix = torch.sparse.Tensor(
-        [[1, 0, 0, 1], [0, 1, 1, 1], [1, 0, 1, 1], [0, 0, 0, 1]]
+    edge_index = torch.tensor(
+        [[0, 0, 1, 1, 1, 1, 2, 2, 2, 3], [0, 3, 0, 1, 2, 3, 0, 2, 3, 3]],
+        dtype=torch.long,
     )
     features = torch.rand(4, 2)
-    print(actor_critic(features, adjacency_matrix))
+    print(actor_critic(features, edge_index))

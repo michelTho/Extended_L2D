@@ -77,8 +77,8 @@ class PPO:
             for i in range(len(memories)):
                 current_pi, current_values = self.policy(
                     # We use a torch.cat to convert list of tensor to batch tensor
-                    features=torch.cat(memories[i].features),
-                    adjacency_matrix=torch.cat(memories[i].adjacency_matrix),
+                    features=torch.stack(memories[i].features),
+                    adjacency_matrix=torch.stack(memories[i].adjacency_matrix),
                 )
                 current_log_probabilities, entropy = self.eval_action(
                     current_pi, memories[i].action
@@ -137,7 +137,7 @@ if __name__ == "__main__":
 
     memory = Memory()
     for i in range(10):
-        memory.features.append(torch.rand(2, 4))
+        memory.features.append(torch.rand(4, 2))
         memory.adjacency_matrix.append(
             torch.tensor([[1, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [0, 0, 0, 1]])
         )

@@ -30,14 +30,17 @@ class Memory:
 # This is used for unit testing
 if __name__ == "__main__":
     import torch
+    from torch_geometric.data import Data
 
     memory = Memory()
     for i in range(10):
-        memory.features.append(torch.rand(2, 4))
-        memory.edge_index.append(
-            torch.tensor(
-                [[0, 0, 1, 1, 1, 1, 2, 2, 2, 3], [0, 3, 0, 1, 2, 3, 0, 2, 3, 3]],
-                dtype=torch.long,
+        memory.graphs.append(
+            Data(
+                x=torch.rand(2, 4),
+                edge_index=torch.tensor(
+                    [[0, 0, 1, 1, 1, 1, 2, 2, 2, 3], [0, 3, 0, 1, 2, 3, 0, 2, 3, 3]],
+                    dtype=torch.long,
+                ),
             )
         )
         memory.action.append((0, 1))

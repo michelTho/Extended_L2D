@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 import torch
+from torch.distributions.categorical import Categorical
 import torch.nn as nn
 from torch_geometric.data import Data, DataLoader
 

@@ -126,6 +126,8 @@ class ActorCritic(nn.Module):
 
 # This is used for unit testing
 if __name__ == "__main__":
+    from torch_geometric.data import Data, DataLoader
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     actor_critic = ActorCritic(
         n_jobs=2,
@@ -145,4 +147,7 @@ if __name__ == "__main__":
         dtype=torch.long,
     )
     features = torch.rand(4, 2)
-    print(actor_critic(features, edge_index))
+    graph = Data(x=features, edge_index=edge_index)
+    dataloader = DataLoader([graph], batch_size=1)
+    for batch in dataloader:
+        print(actor_critic(batch))
